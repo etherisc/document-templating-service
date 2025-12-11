@@ -112,6 +112,7 @@ class DocxJinjaLinterService:
         errors = []
         warnings = []
         
+        docxtpl_temp_file_path: Optional[str] = None
         try:
             # Stage 1: Extract plaintext using python-docx (independent of docxtpl)
             logger.info(f"Step 1: Extracting plaintext from {filename} using python-docx")
@@ -155,7 +156,7 @@ class DocxJinjaLinterService:
             
             # Stage 4: If syntax is clean, proceed with docxtpl processing
             logger.info(f"Step 4: Syntax clean, proceeding with docxtpl processing")
-            doc_template, raw_xml = self._extract_xml_with_docxtpl(file_content, filename)
+            doc_template, raw_xml, docxtpl_temp_file_path = self._extract_xml_with_docxtpl(file_content, filename)
             
             # Stage 5: Use docxtpl to process extended docx tags
             logger.info(f"Step 5: Processing extended docx tags with docxtpl")
@@ -209,8 +210,15 @@ class DocxJinjaLinterService:
         except Exception as e:
             logger.error(f"Linting failed for {filename}: {str(e)}")
             return self._create_error_result(e, filename, start_time)
+        finally:
+            # Keep the docxtpl temp file around for all lazy operations (patch_xml, variable detection, etc.)
+            if docxtpl_temp_file_path and os.path.exists(docxtpl_temp_file_path):
+                try:
+                    os.unlink(docxtpl_temp_file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp file {docxtpl_temp_file_path}: {e}")
 
-    def _extract_xml_with_docxtpl(self, file_content: bytes, filename: str) -> Tuple[DocxTemplate, str]:
+    def _extract_xml_with_docxtpl(self, file_content: bytes, filename: str) -> Tuple[DocxTemplate, str, str]:
         """
         Step 1: Use docxtpl to extract XML from docx.
         
@@ -219,30 +227,34 @@ class DocxJinjaLinterService:
             filename: Original filename for error reporting
             
         Returns:
-            Tuple of (DocxTemplate instance, raw XML string)
+            Tuple of (DocxTemplate instance, raw XML string, temp file path).
+            NOTE: The caller is responsible for deleting the returned temp file path
+            after all docxtpl/python-docx lazy operations are complete.
         """
+        temp_file_path: Optional[str] = None
         try:
-            # Create temporary file
+            # Create temporary file - must remain on disk while docxtpl lazily reads it
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
                 temp_file.write(file_content)
                 temp_file_path = temp_file.name
-            
-            try:
-                # Create DocxTemplate instance
-                doc_template = DocxTemplate(temp_file_path)
-                doc_template.init_docx()
-                
-                # Extract raw XML
-                raw_xml = doc_template.get_xml()
-                
-                logger.debug(f"Successfully extracted XML from {filename}: {len(raw_xml)} characters")
-                return doc_template, raw_xml
-                
-            finally:
-                if os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                    
+
+            # Create DocxTemplate instance
+            doc_template = DocxTemplate(temp_file_path)
+            doc_template.init_docx()
+
+            # Extract raw XML
+            raw_xml = doc_template.get_xml()
+
+            logger.debug(f"Successfully extracted XML from {filename}: {len(raw_xml)} characters")
+            return doc_template, raw_xml, temp_file_path
+
         except Exception as e:
+            # Clean up the temp file on failure to avoid leaking /tmp files
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as cleanup_err:
+                    logger.warning(f"Failed to delete temp file {temp_file_path}: {cleanup_err}")
             raise DocumentExtractionException(
                 f"Failed to extract XML from {filename} using docxtpl: {str(e)}"
             )
@@ -281,40 +293,46 @@ class DocxJinjaLinterService:
         Returns:
             Structured text with proper line breaks
         """
+        temp_file_path: Optional[str] = None
         try:
-            # Create temporary file
+            # Create temporary file - must remain on disk while python-docx lazily reads it
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as temp_file:
                 temp_file.write(file_content)
                 temp_file_path = temp_file.name
-            
-            try:
-                doc = Document(temp_file_path)
-                full_text = []
-                
-                # Extract paragraph text
-                for paragraph in doc.paragraphs:
-                    if paragraph.text.strip():  # Skip empty paragraphs
-                        full_text.append(paragraph.text)
-                
-                # Extract table text
-                for table in doc.tables:
-                    for row in table.rows:
-                        row_text = []
-                        for cell in row.cells:
-                            row_text.append(cell.text.strip())
+
+            doc = Document(temp_file_path)
+            full_text = []
+
+            # Extract paragraph text
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():  # Skip empty paragraphs
+                    full_text.append(paragraph.text)
+
+            # Extract table text
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        text = cell.text.strip()
+                        if text:
+                            row_text.append(text)
+                    if row_text:
                         full_text.append(' | '.join(row_text))
-                
-                structured_text = '\n'.join(full_text)
-                logger.debug(f"Extracted structured text: {len(structured_text)} characters, {len(full_text)} lines")
-                return structured_text
-                
-            finally:
-                if os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                    
+
+            structured_text = '\n'.join(full_text)
+            logger.debug(f"Extracted structured text: {len(structured_text)} characters, {len(full_text)} lines")
+            return structured_text
+
         except Exception as e:
             logger.error(f"Failed to extract structured text from {filename}: {str(e)}")
             return ""
+        finally:
+            # Clean up AFTER all operations complete
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as cleanup_err:
+                    logger.warning(f"Failed to delete temp file {temp_file_path}: {cleanup_err}")
 
     def _create_input_data(self, raw_xml: str, processed_xml: str, structured_text: str, filename: str) -> dict:
         """
