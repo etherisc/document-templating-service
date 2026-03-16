@@ -1,5 +1,8 @@
 FROM mcr.microsoft.com/devcontainers/python:1-3.12-bullseye
 
+# Remove Yarn repo (expired GPG key breaks apt-get update in base image)
+RUN rm -f /etc/apt/sources.list.d/yarn.list 2>/dev/null || true
+
 # Install system dependencies for document processing
 RUN apt-get update && apt-get install -y \
     libreoffice \

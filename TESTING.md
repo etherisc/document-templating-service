@@ -290,7 +290,7 @@ For CI/CD integration:
   run: |
     ./run_tests.sh --skip-services
   env:
-    GOTENBERG_URL: http://gotenberg:3000
+    GOTENBERG_API_URL: http://gotenberg:3000
     DOCUMENT_SERVICE_URL: http://localhost:8000
 ```
 

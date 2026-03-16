@@ -24,7 +24,7 @@ from typing import Dict, Any, Optional
 
 # Test configuration
 BASE_URL = "http://localhost:8000"
-GOTENBERG_URL = "http://localhost:3000"
+GOTENBERG_API_URL = "http://localhost:3000"
 TEST_FILES_DIR = Path("test_files")
 
 # Ensure test files directory exists
@@ -47,7 +47,7 @@ class TestDocumentProcessor:
         """Wait for both services to be ready"""
         services = [
             (BASE_URL, "Document service"),
-            (GOTENBERG_URL, "Gotenberg service")
+            (GOTENBERG_API_URL, "Gotenberg service")
         ]
         
         for url, name in services:
@@ -202,7 +202,7 @@ class TestDocumentProcessor:
                     }
                     
                     response = requests.post(
-                        f"{GOTENBERG_URL}/forms/libreoffice/convert",
+                        f"{GOTENBERG_API_URL}/forms/libreoffice/convert",
                         files=files,
                         timeout=30
                     )

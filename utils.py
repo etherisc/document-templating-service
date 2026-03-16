@@ -4,9 +4,7 @@ from dotenv import dotenv_values
 env = dotenv_values('./.env')
 
 def get_env(var_name: str) -> str:
-    if 'GOTENBERG_API_URL' in os.environ:
-        return os.environ['GOTENBERG_API_URL']
-    return env[var_name]
+    return os.environ.get(var_name) or env.get(var_name, "")
 
 def remove_file(filename: str):
     file_path = 'temp/{}'.format(filename)

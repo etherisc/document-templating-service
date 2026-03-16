@@ -16,5 +16,5 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - GOTENBERG_API_URL=http://gotenberg-service:3000
+      - GOTENBERG_API_URL=http://gotenberg:3000
       - UNDEFINED_BEHAVIOR=debug

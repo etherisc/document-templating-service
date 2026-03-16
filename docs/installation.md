@@ -135,6 +135,8 @@ This optimized image reduces cold start times and resource usage.
 |----------|-------------|---------|----------|
 | `GOTENBERG_API_URL` | URL to Gotenberg service | `http://host.docker.internal:3000` | Yes |
 
+**Note:** Only `GOTENBERG_API_URL` is used. For Docker Swarm, use the service DNS name, e.g. `http://gotenberg.web:3000` when the Gotenberg service is in the `web` stack.
+
 ## Verification
 
 After installation, verify everything is working:
